@@ -41,9 +41,12 @@ func main() {
 	go hub.run()
 
 	router := gin.New()
-	router.LoadHTMLFiles("home.html")
+	router.LoadHTMLGlob("./*.html")
 	router.GET("/room/:roomId", func(c *gin.Context) {
 		c.HTML(200, "home.html", nil)
+	})
+	router.GET("/room2/:roomId", func(c *gin.Context) {
+		c.HTML(200, "home2.html", nil)
 	})
 
 	router.GET("/ws/:roomId", func(c *gin.Context) {

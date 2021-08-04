@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"log"
 	"net/http"
 	"time"
@@ -46,7 +48,7 @@ type Client struct {
 	conn *websocket.Conn
 
 	// Buffered channel of outbound messages.
-	send chan MessageResponse
+	send chan []byte
 }
 
 // readPump pumps messages from the websocket connection to the hub.
@@ -65,27 +67,30 @@ func (c *Client) readPump() {
 	var messageRequest *MessageRequest = &MessageRequest{}
 
 	for {
-		// _, message, err := c.conn.ReadMessage()
-		// if err != nil {
-		// 	if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-		// 		log.Printf("error: %v", err)
-		// 	}
-		// 	break
-		// }
-		// message = bytes.TrimSpace(bytes.Replace(message, newline, space, -1))
-		err := c.conn.ReadJSON(messageRequest)
-		log.Printf("this is the request")
-		log.Printf("%v", *messageRequest)
+		_, message, err := c.conn.ReadMessage()
 		if err != nil {
-			log.Println("read pump")
-			log.Println(err)
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				log.Printf("IsUnexpectedCloseError() %v", err)
+				log.Printf("error: %v", err)
 			}
 			break
 		}
+		message = bytes.TrimSpace(bytes.Replace(message, newline, space, -1))
+		json.Unmarshal([]byte(message), &messageRequest)
+		log.Printf("%v", messageRequest)
+		// err := c.conn.ReadJSON(messageRequest)
+		// log.Printf("this is the request")
+		// log.Printf("%v", *messageRequest)
+		// if err != nil {
+		// 	log.Println("read pump")
+		// 	log.Println(err)
+		// 	if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+		// 		log.Printf("IsUnexpectedCloseError() %v", err)
+		// 	}
+		// 	break
+		// }
 
-		c.hub.broadcast <- MessageRequest{RoomId: messageRequest.RoomId, MessageType: messageRequest.MessageType}
+		// c.hub.broadcast <- MessageRequest{RoomId: messageRequest.RoomId, MessageType: messageRequest.MessageType, SeatId: messageRequest.SeatId, client: c}
+		c.hub.broadcast <- MessageDTO{RoomId: messageRequest.RoomId, MessageType: messageRequest.MessageType, SeatId: messageRequest.SeatId, client: c}
 	}
 }
 
@@ -109,28 +114,33 @@ func (c *Client) writePump() {
 				c.conn.WriteMessage(websocket.CloseMessage, []byte{})
 				return
 			}
-			err := c.conn.WriteJSON(message)
+			// err := c.conn.WriteJSON(message)
+			// if err != nil {
+			// 	log.Println("write pump")
+			// 	log.Println(err)
+			// }
+
+			w, err := c.conn.NextWriter(websocket.TextMessage)
 			if err != nil {
-				log.Println("write pump")
-				log.Println(err)
+				return
 			}
 
-			// w, err := c.conn.NextWriter(websocket.TextMessage)
+			// b, err := json.Marshal(message)
 			// if err != nil {
-			// 	return
+			// 	log.Printf("%v", err)
 			// }
-			// w.Write(message)
+			w.Write(message)
 
 			// Add queued chat messages to the current websocket message.
-			// n := len(c.send)
-			// for i := 0; i < n; i++ {
-			// 	w.Write(newline)
-			// 	w.Write(<-c.send)
-			// }
+			n := len(c.send)
+			for i := 0; i < n; i++ {
+				w.Write(newline)
+				w.Write(<-c.send)
+			}
 
-			// if err := w.Close(); err != nil {
-			// 	return
-			// }
+			if err := w.Close(); err != nil {
+				return
+			}
 		case <-ticker.C:
 			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
@@ -149,7 +159,7 @@ func serveWs(hub *Hub, w http.ResponseWriter, r *http.Request, roomId string) {
 		log.Println(err)
 		return
 	}
-	client := &Client{hub: hub, conn: conn, send: make(chan MessageResponse), roomId: roomId}
+	client := &Client{hub: hub, conn: conn, send: make(chan []byte), roomId: roomId}
 	client.hub.register <- client
 
 	// Allow collection of memory referenced by the caller by doing all work in

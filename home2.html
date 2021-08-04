@@ -26,7 +26,7 @@ window.onload = function () {
             return false;
         }
         // conn.send(msg.value);
-        conn.send(JSON.stringify({"roomId":roomId,"messageType":"LOCK","seatId":"1"}))
+        conn.send(JSON.stringify({"roomId":roomId,"messageType":"LOCK","seatId":"2"}))
         msg.value = "";
         return false;
     };
@@ -41,11 +41,12 @@ window.onload = function () {
         conn.onmessage = function (evt) {
             console.log(evt.data);
 
-
             var messages = evt.data.split('\n');
+            var item = document.createElement("div");
+            console.log(messages[0]);
             for (var i = 0; i < messages.length; i++) {
                 var item = document.createElement("div");
-                item.innerText = messages[i];
+                item.innerText = messages[i]
                 appendLog(item);
             }
         };
