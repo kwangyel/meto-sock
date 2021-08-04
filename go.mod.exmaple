@@ -1,0 +1,3 @@
+module github.com/elliotfores/go-websocket-tutorial
+
+go 1.16
