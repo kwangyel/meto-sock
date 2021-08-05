@@ -32,7 +32,10 @@ type Hub struct {
 	rooms map[string]map[*Client]bool
 
 	// lockedList map[*Client]map[string]bool
-	lockedList map[string]map[*Client]bool
+	// lockedList map[string]map[*Client]bool
+
+	// Structure is like this map[roomId]map[seatId]client
+	lockedList map[string]map[string]*Client
 	bookedList map[string]bool
 
 	// Inbound messages from the clients.
@@ -53,7 +56,8 @@ func newHub() *Hub {
 		register:   make(chan *Client),
 		unregister: make(chan *Client),
 		rooms:      make(map[string]map[*Client]bool),
-		lockedList: make(map[string]map[*Client]bool),
+
+		lockedList: make(map[string]map[string]*Client),
 		bookedList: make(map[string]bool),
 		// clients:    make(map[*Client]bool),
 	}
@@ -63,92 +67,111 @@ func (h *Hub) run() {
 	for {
 		select {
 		case client := <-h.register:
-			log.Printf("1 client added")
 			room := h.rooms[client.roomId]
+			seats := h.lockedList[client.roomId]
 			if room == nil {
 				room = make(map[*Client]bool)
 				h.rooms[client.roomId] = room
+				// TODO: might also need to check if the roomId(aka scheduleId) actually exists
 			}
 			room[client] = true
-		case client := <-h.unregister:
-			log.Printf("1 client left")
-			room := h.rooms[client.roomId]
 
-			// h.lockedList[client]
-			if room != nil {
-				if _, ok := room[client]; ok {
-					// delete(h.lockedList, client)
-
-					//Removing client from the locked list here
-					delete(room, client)
-					for k, v := range h.lockedList {
-						for keys := range v {
-							if keys == client {
-								delete(h.lockedList, k)
-							}
-						}
-					}
-					lockedArray := make([]int, 0, len(h.lockedList))
-					for key := range h.lockedList {
-						i, err := strconv.Atoi(key)
-						if err != nil {
-							log.Printf("%v", err)
-						}
-						lockedArray = append(lockedArray, i)
-					}
-
-					b, err := json.Marshal(MessageResponse{RoomId: client.roomId, MessageType: ON_LOCK_LEAVE, LockedList: lockedArray, BookedList: nil})
+			if seats != nil {
+				lockedArray := make([]int, 0, len(h.lockedList[client.roomId]))
+				for key := range h.lockedList[client.roomId] {
+					i, err := strconv.Atoi(key)
 					if err != nil {
 						log.Printf("%v", err)
 					}
-					for cc := range room {
-						select {
-						// case client.send <- MessageResponse{RoomId: message.RoomId, MessageType: message.MessageType, LockedList: h.lockedList, BookedList: nil}:
+					lockedArray = append(lockedArray, i)
+				}
 
-						case cc.send <- b:
-						default:
-							log.Printf("called here")
-							close(cc.send)
-							delete(room, cc)
+				b, err := json.Marshal(MessageResponse{RoomId: client.roomId, MessageType: ON_LOCK, LockedList: lockedArray, BookedList: nil})
+				if err != nil {
+					log.Printf("%v", err)
+				}
+				select {
+				case client.send <- b:
+				default:
+					close(client.send)
+					delete(room, client)
+				}
+			}
+
+		case client := <-h.unregister:
+			room := h.rooms[client.roomId]
+			counter := 0
+
+			if room != nil {
+				if _, ok := room[client]; ok {
+					delete(room, client)
+
+					//Removing client and associated seat from the locked list on disconnect
+					for k, v := range h.lockedList[client.roomId] {
+						if v == client {
+							delete(h.lockedList[client.roomId], k)
+							counter++
 						}
 					}
+					if counter > 0 {
+						lockedArray := make([]int, 0, len(h.lockedList[client.roomId]))
+						for key := range h.lockedList[client.roomId] {
+							i, err := strconv.Atoi(key)
+							if err != nil {
+								log.Printf("%v", err)
+							}
+							lockedArray = append(lockedArray, i)
+						}
+
+						//build json response and convert to []byte
+						b, err := json.Marshal(MessageResponse{RoomId: client.roomId, MessageType: ON_LOCK_LEAVE, LockedList: lockedArray, BookedList: nil})
+						if err != nil {
+							log.Printf("%v", err)
+						}
+
+						for cc := range room {
+							select {
+							// case client.send <- MessageResponse{RoomId: message.RoomId, MessageType: message.MessageType, LockedList: h.lockedList, BookedList: nil}:
+
+							case cc.send <- b:
+							default:
+								log.Printf("called here")
+								close(cc.send)
+								delete(room, cc)
+							}
+						}
+
+					}
 					close(client.send)
+
 					if len(room) == 0 {
 						delete(h.rooms, client.roomId)
 					}
 				}
 			}
+
 		case message := <-h.broadcast:
 			room := h.rooms[message.RoomId]
 			if room != nil {
 				switch msgType := message.MessageType; msgType {
-				case ON_LOCK:
-					// h.bookedList = append(h.bookedList, message.SeatId)
-					// i, err := strconv.Atoi(message.SeatId)
-					// if err != nil {
-					// 	log.Printf("%v", err)
-					// }
-					child := make(map[*Client]bool)
-					child[message.client] = true
-					h.lockedList[message.SeatId] = child
 
-					lockedArray := make([]int, 0, len(h.lockedList))
-					for key := range h.lockedList {
+				case ON_LOCK:
+					seat_client := h.lockedList[message.RoomId]
+					if seat_client == nil {
+						seat_client = make(map[string]*Client)
+					}
+					seat_client[message.SeatId] = message.client
+					h.lockedList[message.RoomId] = seat_client
+					log.Printf("%v", h.lockedList)
+
+					lockedArray := make([]int, 0, len(h.lockedList[message.RoomId]))
+					for key := range h.lockedList[message.RoomId] {
 						i, err := strconv.Atoi(key)
 						if err != nil {
 							log.Printf("%v", err)
 						}
 						lockedArray = append(lockedArray, i)
 					}
-					log.Printf("locked list")
-					log.Printf("%v", h.lockedList)
-					log.Printf("locked array")
-					log.Printf("%v", lockedArray)
-					log.Printf("%v", h.rooms)
-
-					log.Printf("lock")
-					log.Printf("%v", h.lockedList)
-					log.Printf("%v", message.SeatId)
 
 					b, err := json.Marshal(MessageResponse{RoomId: message.RoomId, MessageType: message.MessageType, LockedList: lockedArray, BookedList: nil})
 					if err != nil {
@@ -157,23 +180,15 @@ func (h *Hub) run() {
 
 					for client := range room {
 						select {
-						// case client.send <- MessageResponse{RoomId: message.RoomId, MessageType: message.MessageType, LockedList: h.lockedList, BookedList: nil}:
-
 						case client.send <- b:
 						default:
-							log.Printf("called here")
 							close(client.send)
 							delete(room, client)
 						}
 					}
 				case ON_BOOK:
-					// h.lockedList = append(h.bookedList, message.SeatId)
-					// i, err := strconv.Atoi(message.SeatId)
-					// if err != nil {
-					// 	log.Printf("%v", err)
-					// }
+					// TODO: integrate redis here
 					h.bookedList[message.SeatId] = true
-
 					b, err := json.Marshal(MessageResponse{RoomId: message.RoomId, MessageType: message.MessageType, LockedList: nil, BookedList: h.bookedList})
 
 					if err != nil {
@@ -190,26 +205,24 @@ func (h *Hub) run() {
 						}
 					}
 				case ON_LOCK_LEAVE:
-					// i, err := strconv.Atoi(message.SeatId)
-					// if err != nil {
-					// 	log.Printf("%v", err)
-					// }
-					// child := make(map[*Client]bool)
-					// child[message.client] = true
-					// h.lockedList[message.SeatId] = child
+					delete(h.lockedList[message.RoomId], message.SeatId)
 
-					// h.lockedList[message.SeatId] = nil
-					// delete(h.lockedList, message.client)
-					b, err := json.Marshal(MessageResponse{RoomId: message.RoomId, MessageType: message.MessageType, LockedList: nil, BookedList: h.bookedList})
+					lockedArray := make([]int, 0, len(h.lockedList[message.RoomId]))
+					for key := range h.lockedList[message.RoomId] {
+						i, err := strconv.Atoi(key)
+						if err != nil {
+							log.Printf("%v", err)
+						}
+						lockedArray = append(lockedArray, i)
+					}
 
+					b, err := json.Marshal(MessageResponse{RoomId: message.RoomId, MessageType: message.MessageType, LockedList: lockedArray, BookedList: nil})
 					if err != nil {
 						log.Printf("%v", err)
 					}
 
 					for client := range room {
 						select {
-						// case client.send <- MessageResponse{RoomId: message.RoomId, MessageType: message.MessageType, LockedList: nil, BookedList: h.bookedList}:
-
 						case client.send <- b:
 						default:
 							close(client.send)

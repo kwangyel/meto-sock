@@ -3,6 +3,10 @@
 <head>
 <title>Chat Example</title>
 <script type="text/javascript">
+    function test(){
+        this.conn.send(JSON.stringify({"roomId":roomId,"messageType":"LOCK","seatId":"1"}))
+        console.log("test workingl");
+    }
 window.onload = function () {
     var conn;
     var msg = document.getElementById("msg");
@@ -18,6 +22,17 @@ window.onload = function () {
         }
     }
 
+    document.getElementById("delete").onsubmit = function () {
+        if (!conn) {
+            return false;
+        }
+        // conn.send(msg.value);
+        conn.send(JSON.stringify({"roomId":roomId,"messageType":"LOCK_LEAVE","seatId":"1"}))
+        // conn.send(JSON.stringify({"roomId":roomId,"messageType":"LOCK","seatId":"1"}))
+        // msg.value = "";
+        return false;
+    };
+
     document.getElementById("form").onsubmit = function () {
         if (!conn) {
             return false;
@@ -26,6 +41,7 @@ window.onload = function () {
             return false;
         }
         // conn.send(msg.value);
+        // conn.send(JSON.stringify({"roomId":roomId,"messageType":"LOCK_LEAVE","seatId":"1"}))
         conn.send(JSON.stringify({"roomId":roomId,"messageType":"LOCK","seatId":"1"}))
         msg.value = "";
         return false;
@@ -99,6 +115,9 @@ body {
 <form id="form">
     <input type="submit" value="Send" />
     <input type="text" id="msg" size="64" autofocus />
+</form>
+<form id = "delete">
+    <input type="submit" value="delete" />
 </form>
 </body>
 </html>

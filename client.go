@@ -76,20 +76,7 @@ func (c *Client) readPump() {
 		}
 		message = bytes.TrimSpace(bytes.Replace(message, newline, space, -1))
 		json.Unmarshal([]byte(message), &messageRequest)
-		log.Printf("%v", messageRequest)
-		// err := c.conn.ReadJSON(messageRequest)
-		// log.Printf("this is the request")
-		// log.Printf("%v", *messageRequest)
-		// if err != nil {
-		// 	log.Println("read pump")
-		// 	log.Println(err)
-		// 	if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-		// 		log.Printf("IsUnexpectedCloseError() %v", err)
-		// 	}
-		// 	break
-		// }
 
-		// c.hub.broadcast <- MessageRequest{RoomId: messageRequest.RoomId, MessageType: messageRequest.MessageType, SeatId: messageRequest.SeatId, client: c}
 		c.hub.broadcast <- MessageDTO{RoomId: messageRequest.RoomId, MessageType: messageRequest.MessageType, SeatId: messageRequest.SeatId, client: c}
 	}
 }
@@ -114,21 +101,12 @@ func (c *Client) writePump() {
 				c.conn.WriteMessage(websocket.CloseMessage, []byte{})
 				return
 			}
-			// err := c.conn.WriteJSON(message)
-			// if err != nil {
-			// 	log.Println("write pump")
-			// 	log.Println(err)
-			// }
 
 			w, err := c.conn.NextWriter(websocket.TextMessage)
 			if err != nil {
 				return
 			}
 
-			// b, err := json.Marshal(message)
-			// if err != nil {
-			// 	log.Printf("%v", err)
-			// }
 			w.Write(message)
 
 			// Add queued chat messages to the current websocket message.
@@ -152,8 +130,7 @@ func (c *Client) writePump() {
 
 // serveWs handles websocket requests from the peer.
 func serveWs(hub *Hub, w http.ResponseWriter, r *http.Request, roomId string) {
-	log.Println("this is the websocket server")
-	log.Println(roomId)
+	upgrader.CheckOrigin = func(r *http.Request) bool { return true }
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Println(err)
