@@ -35,7 +35,9 @@ type Hub struct {
 	// lockedList map[string]map[*Client]bool
 
 	// Structure is like this map[roomId]map[seatId]client
-	lockedList map[string]map[string]*Client
+	lockedList  map[string]map[string]*Client
+	confirmLock map[string]map[string]*Client
+
 	bookedList map[string]bool
 
 	// Inbound messages from the clients.
@@ -57,8 +59,9 @@ func newHub() *Hub {
 		unregister: make(chan *Client),
 		rooms:      make(map[string]map[*Client]bool),
 
-		lockedList: make(map[string]map[string]*Client),
-		bookedList: make(map[string]bool),
+		lockedList:  make(map[string]map[string]*Client),
+		confirmLock: make(map[string]map[string]*Client),
+		bookedList:  make(map[string]bool),
 		// clients:    make(map[*Client]bool),
 	}
 }
@@ -107,10 +110,16 @@ func (h *Hub) run() {
 					delete(room, client)
 
 					//Removing client and associated seat from the locked list on disconnect
+					// if they have confirmed the seat the seat should be in the conrim locks and not removed
+					confirmedSeats := h.confirmLock[client.roomId]
 					for k, v := range h.lockedList[client.roomId] {
-						if v == client {
-							delete(h.lockedList[client.roomId], k)
-							counter++
+						if confirmedSeats[k] != nil {
+
+						} else {
+							if v == client {
+								delete(h.lockedList[client.roomId], k)
+								counter++
+							}
 						}
 					}
 					if counter > 0 {
@@ -155,6 +164,24 @@ func (h *Hub) run() {
 			if room != nil {
 				switch msgType := message.MessageType; msgType {
 
+				case ON_LOCK_CONFIRM:
+					seat_client := h.lockedList[message.RoomId]
+					if seat_client == nil {
+						seat_client = make(map[string]*Client)
+					}
+					seat_client[message.SeatId] = message.client
+					h.confirmLock[message.RoomId] = seat_client
+
+					b, err := json.Marshal(MessageResponse{RoomId: message.RoomId, MessageType: ON_LOCK_CONFIRM, LockedList: nil, BookedList: nil})
+					if err != nil {
+						log.Printf("%v", err)
+					}
+					select {
+					case message.client.send <- b:
+					default:
+						close(message.client.send)
+						delete(room, message.client)
+					}
 				case ON_LOCK:
 					seat_client := h.lockedList[message.RoomId]
 					if seat_client == nil {
@@ -206,6 +233,12 @@ func (h *Hub) run() {
 					}
 				case ON_LOCK_LEAVE:
 					delete(h.lockedList[message.RoomId], message.SeatId)
+
+					lockConfirm := h.confirmLock[message.RoomId]
+					if lockConfirm[message.SeatId] != nil {
+						delete(lockConfirm, message.SeatId)
+						h.confirmLock[message.RoomId] = lockConfirm
+					}
 
 					lockedArray := make([]int, 0, len(h.lockedList[message.RoomId]))
 					for key := range h.lockedList[message.RoomId] {

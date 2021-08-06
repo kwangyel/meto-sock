@@ -21,6 +21,16 @@ window.onload = function () {
             log.scrollTop = log.scrollHeight - log.clientHeight;
         }
     }
+    document.getElementById("confirm").onsubmit = function () {
+        if (!conn) {
+            return false;
+        }
+        // conn.send(msg.value);
+        conn.send(JSON.stringify({"roomId":roomId,"messageType":"LOCK_CONFIRM","seatId":"1"}))
+        // conn.send(JSON.stringify({"roomId":roomId,"messageType":"LOCK","seatId":"1"}))
+        // msg.value = "";
+        return false;
+    };
 
     document.getElementById("delete").onsubmit = function () {
         if (!conn) {
@@ -91,8 +101,8 @@ body {
     margin: 0;
     padding: 0.5em 0.5em 0.5em 0.5em;
     position: absolute;
-    top: 0.5em;
-    left: 0.5em;
+    top: 100px;
+    left: 100px;
     right: 0.5em;
     bottom: 3em;
     overflow: auto;
@@ -118,6 +128,9 @@ body {
 </form>
 <form id = "delete">
     <input type="submit" value="delete" />
+</form>
+<form id = "confirm">
+    <input type="submit" value="confirm" />
 </form>
 </body>
 </html>

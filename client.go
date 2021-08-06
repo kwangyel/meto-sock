@@ -23,9 +23,10 @@ const (
 	// Maximum message size allowed from peer.
 	maxMessageSize = 512
 
-	ON_LOCK       = "LOCK"
-	ON_BOOK       = "BOOK"
-	ON_LOCK_LEAVE = "LOCK_LEAVE"
+	ON_LOCK         = "LOCK"
+	ON_BOOK         = "BOOK"
+	ON_LOCK_LEAVE   = "LOCK_LEAVE"
+	ON_LOCK_CONFIRM = "LOCK_CONFIRM"
 )
 
 var (
