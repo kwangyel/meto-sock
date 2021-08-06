@@ -116,7 +116,11 @@ func (h *Hub) run() {
 					leaveList := make([]string, 0)
 
 					for k, v := range h.lockedList[client.roomId] {
+						log.Printf(k)
+						log.Printf("%v", h.lockedList)
+						log.Printf("%v", confirmedSeats)
 						if confirmedSeats[k] != nil {
+							counter++
 						} else {
 							if v == client {
 								leaveList = append(leaveList, k)
@@ -168,7 +172,7 @@ func (h *Hub) run() {
 				switch msgType := message.MessageType; msgType {
 
 				case ON_LOCK_CONFIRM:
-					seat_client := h.lockedList[message.RoomId]
+					seat_client := h.confirmLock[message.RoomId]
 					if seat_client == nil {
 						seat_client = make(map[string]*Client)
 					}

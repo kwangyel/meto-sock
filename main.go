@@ -1,9 +1,12 @@
 package main
 
 import (
+	"context"
 	"flag"
+	"fmt"
 
 	"github.com/gin-gonic/gin"
+	"github.com/go-redis/redis/v8"
 )
 
 var addr = flag.String("addr", ":8080", "http service address")
@@ -45,6 +48,17 @@ func main() {
 	router.GET("/room/:roomId", func(c *gin.Context) {
 		c.HTML(200, "home.html", nil)
 	})
+
+	var ctx = context.Background()
+	rdb := redis.NewClient(&redis.Options{
+		Addr:     "localhost:6379",
+		Password: "",
+		DB:       0,
+	})
+
+	pong, err := rdb.Ping(ctx).Result()
+	fmt.Printf(pong, err)
+
 	router.GET("/room2/:roomId", func(c *gin.Context) {
 		c.HTML(200, "home2.html", nil)
 	})

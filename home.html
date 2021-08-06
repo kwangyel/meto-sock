@@ -43,6 +43,19 @@ window.onload = function () {
         return false;
     };
 
+    document.getElementById("sendit").onsubmit = function () {
+        if (!conn) {
+            return false;
+        }
+        if (!msg.value) {
+            return false;
+        }
+        // conn.send(msg.value);
+        // conn.send(JSON.stringify({"roomId":roomId,"messageType":"LOCK_LEAVE","seatId":"1"}))
+        conn.send(JSON.stringify({"roomId":roomId,"messageType":"LOCK","seatId":"3"}))
+        msg.value = "";
+        return false;
+    };
     document.getElementById("form").onsubmit = function () {
         if (!conn) {
             return false;
@@ -131,6 +144,9 @@ body {
 </form>
 <form id = "confirm">
     <input type="submit" value="confirm" />
+</form>
+<form id = "sendit">
+    <input type="submit" value="send it" />
 </form>
 </body>
 </html>
