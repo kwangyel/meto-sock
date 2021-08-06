@@ -21,6 +21,7 @@ type MessageResponse struct {
 	RoomId      string `json:"roomId"`
 	MessageType string `json:"messageType"`
 	// LockedList  map[string]map[*Client]bool `json:"lockedList"`
+	LeaveList  []string        `json:"leaveList"`
 	LockedList []int           `json:"lockedList"`
 	BookedList map[string]bool `json:"bookedList"`
 }
@@ -112,11 +113,13 @@ func (h *Hub) run() {
 					//Removing client and associated seat from the locked list on disconnect
 					// if they have confirmed the seat the seat should be in the conrim locks and not removed
 					confirmedSeats := h.confirmLock[client.roomId]
+					leaveList := make([]string, 0)
+
 					for k, v := range h.lockedList[client.roomId] {
 						if confirmedSeats[k] != nil {
-
 						} else {
 							if v == client {
+								leaveList = append(leaveList, k)
 								delete(h.lockedList[client.roomId], k)
 								counter++
 							}
@@ -133,7 +136,7 @@ func (h *Hub) run() {
 						}
 
 						//build json response and convert to []byte
-						b, err := json.Marshal(MessageResponse{RoomId: client.roomId, MessageType: ON_LOCK_LEAVE, LockedList: lockedArray, BookedList: nil})
+						b, err := json.Marshal(MessageResponse{RoomId: client.roomId, LeaveList: leaveList, MessageType: ON_LOCK_LEAVE, LockedList: lockedArray, BookedList: nil})
 						if err != nil {
 							log.Printf("%v", err)
 						}
@@ -240,19 +243,22 @@ func (h *Hub) run() {
 						h.confirmLock[message.RoomId] = lockConfirm
 					}
 
-					lockedArray := make([]int, 0, len(h.lockedList[message.RoomId]))
-					for key := range h.lockedList[message.RoomId] {
-						i, err := strconv.Atoi(key)
-						if err != nil {
-							log.Printf("%v", err)
-						}
-						lockedArray = append(lockedArray, i)
-					}
+					// lockedArray := make([]int, 0, len(h.lockedList[message.RoomId]))
+					// for key := range h.lockedList[message.RoomId] {
+					// 	i, err := strconv.Atoi(key)
+					// 	if err != nil {
+					// 		log.Printf("%v", err)
+					// 	}
+					// 	lockedArray = append(lockedArray, i)
+					// }
+					leaveList := make([]string, 0)
+					leaveList = append(leaveList, message.SeatId)
 
-					b, err := json.Marshal(MessageResponse{RoomId: message.RoomId, MessageType: message.MessageType, LockedList: lockedArray, BookedList: nil})
+					b, err := json.Marshal(MessageResponse{RoomId: message.RoomId, LeaveList: leaveList, MessageType: message.MessageType, LockedList: nil, BookedList: nil})
 					if err != nil {
 						log.Printf("%v", err)
 					}
+					log.Printf("%v", leaveList)
 
 					for client := range room {
 						select {
