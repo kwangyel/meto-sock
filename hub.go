@@ -159,10 +159,9 @@ func (h *Hub) run() {
 
 					}
 					close(client.send)
-
-					if len(room) == 0 {
-						delete(h.rooms, client.roomId)
-					}
+				}
+				if len(room) == 0 {
+					delete(h.rooms, client.roomId)
 				}
 			}
 
