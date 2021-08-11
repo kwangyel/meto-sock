@@ -16,14 +16,21 @@ type MessageDTO struct {
 	MessageType string
 	SeatId      string
 	client      *Client
+	BookedList  []int
+}
+
+type BookingDTO struct {
+	RoomId      string `json:"roomId"`
+	MessageType string `json:"messageType"`
+	BookList    []int  `json:"bookList"`
 }
 type MessageResponse struct {
 	RoomId      string `json:"roomId"`
 	MessageType string `json:"messageType"`
 	// LockedList  map[string]map[*Client]bool `json:"lockedList"`
-	LeaveList  []string        `json:"leaveList"`
-	LockedList []int           `json:"lockedList"`
-	BookedList map[string]bool `json:"bookedList"`
+	LeaveList  []string `json:"leaveList"`
+	LockedList []int    `json:"lockedList"`
+	BookedList []int    `json:"bookedList"`
 }
 
 type Hub struct {
@@ -39,7 +46,7 @@ type Hub struct {
 	lockedList  map[string]map[string]*Client
 	confirmLock map[string]map[string]*Client
 
-	bookedList map[string]bool
+	bookedList map[string]map[string]bool
 
 	// Inbound messages from the clients.
 	// broadcast chan []byte
@@ -62,7 +69,7 @@ func newHub() *Hub {
 
 		lockedList:  make(map[string]map[string]*Client),
 		confirmLock: make(map[string]map[string]*Client),
-		bookedList:  make(map[string]bool),
+		bookedList:  make(map[string]map[string]bool),
 		// clients:    make(map[*Client]bool),
 	}
 }
@@ -79,6 +86,8 @@ func (h *Hub) run() {
 				// TODO: might also need to check if the roomId(aka scheduleId) actually exists
 			}
 			room[client] = true
+			log.Printf("Clients in roomid %v is %v", client.roomId, len(h.rooms[client.roomId]))
+			log.Printf("locklist: %v", h.lockedList)
 
 			if seats != nil {
 				lockedArray := make([]int, 0, len(h.lockedList[client.roomId]))
@@ -171,12 +180,16 @@ func (h *Hub) run() {
 				switch msgType := message.MessageType; msgType {
 
 				case ON_LOCK_CONFIRM:
-					seat_client := h.confirmLock[message.RoomId]
-					if seat_client == nil {
-						seat_client = make(map[string]*Client)
+					confirm_list := h.confirmLock[message.RoomId]
+					// lock_list := h.lockedList[message.RoomId]
+					if confirm_list == nil {
+						confirm_list = make(map[string]*Client)
 					}
-					seat_client[message.SeatId] = message.client
-					h.confirmLock[message.RoomId] = seat_client
+					// if lock_list != nil {
+					// 	delete(h.lockedList[message.RoomId], message.SeatId)
+					// }
+					confirm_list[message.SeatId] = message.client
+					h.confirmLock[message.RoomId] = confirm_list
 
 					b, err := json.Marshal(MessageResponse{RoomId: message.RoomId, MessageType: ON_LOCK_CONFIRM, LockedList: nil, BookedList: nil})
 					if err != nil {
@@ -220,10 +233,30 @@ func (h *Hub) run() {
 						}
 					}
 				case ON_BOOK:
-					// TODO: integrate redis here
-					h.bookedList[message.SeatId] = true
-					b, err := json.Marshal(MessageResponse{RoomId: message.RoomId, MessageType: message.MessageType, LockedList: nil, BookedList: h.bookedList})
+					//TODO: note this will return all booked seats at the moment.
+					book_list := h.bookedList[message.RoomId]
+					confirm_list := h.confirmLock[message.RoomId]
+					if book_list == nil {
+						book_list = make(map[string]bool)
+					}
+					for _, bookedSeats := range message.BookedList {
+						if confirm_list != nil {
+							delete(h.confirmLock[message.RoomId], strconv.Itoa(bookedSeats))
+						}
+						book_list[strconv.Itoa(bookedSeats)] = true
+					}
 
+					// lockArray := make([]int, 0, len(h.lockedList[message.RoomId]))
+					// for key := range h.lockedList[message.RoomId] {
+					// 	i, err := strconv.Atoi(key)
+					// 	if err != nil {
+					// 		log.Printf("%v", err)
+					// 	}
+					// 	lockArray = append(lockArray, i)
+					// }
+					log.Printf("%v", h.confirmLock)
+
+					b, err := json.Marshal(MessageResponse{RoomId: message.RoomId, MessageType: ON_BOOK, LockedList: nil, BookedList: message.BookedList})
 					if err != nil {
 						log.Printf("%v", err)
 					}

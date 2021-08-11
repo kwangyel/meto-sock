@@ -42,6 +42,16 @@ window.onload = function () {
         // msg.value = "";
         return false;
     };
+    document.getElementById("send4").onsubmit = function () {
+        if (!conn) {
+            return false;
+        }
+        // conn.send(msg.value);
+        // conn.send(JSON.stringify({"roomId":roomId,"messageType":"LOCK_LEAVE","seatId":"1"}))
+        conn.send(JSON.stringify({"roomId":roomId,"messageType":"LOCK","seatId":"4"}))
+        msg.value = "";
+        return false;
+    };
 
     document.getElementById("sendit").onsubmit = function () {
         if (!conn) {
@@ -147,6 +157,9 @@ body {
 </form>
 <form id = "sendit">
     <input type="submit" value="send it" />
+</form>
+<form id = "send4">
+    <input type="submit" value="send 4" />
 </form>
 </body>
 </html>

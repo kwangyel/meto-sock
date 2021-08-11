@@ -2,53 +2,51 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
-	"fmt"
+	"log"
+	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-redis/redis/v8"
 )
 
-var addr = flag.String("addr", ":8080", "http service address")
-
-// func getParam(r *http.Request) string {
-// 	p := strings.Split(r.URL.Path, "/")
-// 	log.Println(p)
-// 	log.Println("this")
-// 	if len(p) == 3 {
-// 		return p[2]
-// 	} else {
-// 		return ""
-// 	}
-// }
-
-// func serveHome(w http.ResponseWriter, r *http.Request) {
-// 	log.Println(r.URL)
-
-// 	if r.URL.Path != "/" {
-// 		http.Error(w, "Not found", http.StatusNotFound)
-// 		return
-// 	}
-// 	if r.Method != "GET" {
-// 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-// 		return
-// 	}
-// 	// roomId := strings.Split(r.URL.Path, "/")
-// 	// fmt.Printf(r.URL.Path)
-// 	http.ServeFile(w, r, "home.html")
-// }
+var addr = flag.String("addr", ":8081", "http service address")
 
 func main() {
 	flag.Parse()
 	hub := newHub()
 	go hub.run()
+	go redisSubscribe(hub)
 
 	router := gin.New()
+
 	router.LoadHTMLGlob("./*.html")
 	router.GET("/room/:roomId", func(c *gin.Context) {
 		c.HTML(200, "home.html", nil)
 	})
 
+	router.GET("/room2/:roomId", func(c *gin.Context) {
+		c.HTML(200, "home2.html", nil)
+	})
+
+	router.GET("/ws/:roomId", func(c *gin.Context) {
+		roomId := c.Param("roomId")
+		_, err := strconv.Atoi(roomId)
+		if err != nil {
+			log.Printf("%v", err)
+			log.Printf("the room id %v doesnt look like a number", roomId)
+		} else if roomId != "" {
+			serveWs(hub, c.Writer, c.Request, roomId)
+		}
+	})
+	router.Run("0.0.0.0" + *addr)
+
+}
+
+func redisSubscribe(hub *Hub) {
+	// Redis loop here
 	var ctx = context.Background()
 	rdb := redis.NewClient(&redis.Options{
 		Addr:     "localhost:6379",
@@ -57,33 +55,30 @@ func main() {
 	})
 
 	pong, err := rdb.Ping(ctx).Result()
-	fmt.Printf(pong, err)
+	log.Printf(pong)
+	if err != nil {
+		log.Printf("ww", err)
+		time.Sleep(3 * time.Second)
+		err := rdb.Ping(ctx).Err()
+		if err != nil {
+			panic(err)
+		}
+	}
 
-	router.GET("/room2/:roomId", func(c *gin.Context) {
-		c.HTML(200, "home2.html", nil)
-	})
-
-	router.GET("/ws/:roomId", func(c *gin.Context) {
-		roomId := c.Param("roomId")
-		serveWs(hub, c.Writer, c.Request, roomId)
-	})
-	router.Run("0.0.0.0" + *addr)
-
-	// http.HandleFunc("/", serveHome)
-	// http.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
-	// 	// roomId := getParam(r)
-	// 	// log.Println("this is the log")
-	// 	// log.Println(roomId)
-	// 	// if roomId != "" {
-	// 	// 	serveWs(hub, w, r, roomId)
-	// 	// }
-	// 	log.Println("this is the handler for ws")
-	// 	log.Println(getParam(r))
-	// 	serveWs(hub, w, r, "1")
-	// 	// serveWs(hub, w, r, "1")
-	// })
-	// err := http.ListenAndServe(*addr, nil)
-	// if err != nil {
-	// 	log.Fatal("ListenAndServe: ", err)
-	// }
+	topic := rdb.Subscribe(ctx, "ON_BOOK")
+	rdb_channel := topic.Channel()
+	for msg := range rdb_channel {
+		log.Printf("there is redis msg", msg)
+		rdbMsg := &BookingDTO{}
+		err := json.Unmarshal([]byte(msg.Payload), rdbMsg)
+		if err != nil {
+			panic(err)
+		}
+		log.Printf("%v", rdbMsg.MessageType)
+		if rdbMsg.MessageType == ON_BOOK {
+			hub.broadcast <- MessageDTO{RoomId: rdbMsg.RoomId, MessageType: ON_BOOK, BookedList: rdbMsg.BookList}
+		} else {
+			log.Printf("not a book message")
+		}
+	}
 }
