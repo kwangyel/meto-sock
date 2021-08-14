@@ -1,15 +1,13 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"flag"
 	"log"
 	"strconv"
-	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/go-redis/redis/v8"
+	"github.com/streadway/amqp"
 )
 
 var addr = flag.String("addr", ":8081", "http service address")
@@ -18,7 +16,9 @@ func main() {
 	flag.Parse()
 	hub := newHub()
 	go hub.run()
-	go redisSubscribe(hub)
+	go runAmqp(hub)
+	// go redisSubscribe(hub)
+	//
 
 	router := gin.New()
 
@@ -45,40 +45,87 @@ func main() {
 
 }
 
-func redisSubscribe(hub *Hub) {
-	// Redis loop here
-	var ctx = context.Background()
-	rdb := redis.NewClient(&redis.Options{
-		Addr:     "localhost:6379",
-		Password: "",
-		DB:       0,
-	})
-
-	pong, err := rdb.Ping(ctx).Result()
-	log.Printf(pong)
+func runAmqp(hub *Hub) {
+	amqpServerUrl := "amqp://guest:guest@localhost:5672/"
+	connectMq, err := amqp.Dial(amqpServerUrl)
 	if err != nil {
-		log.Printf("ww", err)
-		time.Sleep(3 * time.Second)
-		err := rdb.Ping(ctx).Err()
-		if err != nil {
-			panic(err)
-		}
+		panic(err)
+	}
+	defer connectMq.Close()
+
+	channelMQ, err := connectMq.Channel()
+	if err != nil {
+		panic(err)
 	}
 
-	topic := rdb.Subscribe(ctx, "ON_BOOK")
-	rdb_channel := topic.Channel()
-	for msg := range rdb_channel {
-		log.Printf("there is redis msg", msg)
-		rdbMsg := &BookingDTO{}
-		err := json.Unmarshal([]byte(msg.Payload), rdbMsg)
+	defer channelMQ.Close()
+
+	messages, err := channelMQ.Consume(
+		ON_BOOK,
+		"",
+		true,
+		false,
+		false,
+		false,
+		nil,
+	)
+	if err != nil {
+		panic(err)
+	}
+
+	log.Println("Connected to the RabbitMQ")
+
+	// mq := make(chan bool)
+	for message := range messages {
+		log.Printf(" > Received message: %s\n", message.Body)
+		mqMsg := &BookingDTO{}
+		err := json.Unmarshal([]byte(message.Body), mqMsg)
 		if err != nil {
 			panic(err)
 		}
-		log.Printf("%v", rdbMsg.MessageType)
-		if rdbMsg.MessageType == ON_BOOK {
-			hub.broadcast <- MessageDTO{RoomId: rdbMsg.RoomId, MessageType: ON_BOOK, BookedList: rdbMsg.BookList}
+
+		if mqMsg.MessageType == ON_BOOK {
+			hub.broadcast <- MessageDTO{RoomId: mqMsg.RoomId, MessageType: ON_BOOK, BookedList: mqMsg.BookList}
 		} else {
 			log.Printf("not a book message")
 		}
 	}
 }
+
+// func redisSubscribe(hub *Hub) {
+// 	// Redis loop here
+// 	var ctx = context.Background()
+// 	rdb := redis.NewClient(&redis.Options{
+// 		Addr:     "localhost:6379",
+// 		Password: "",
+// 		DB:       0,
+// 	})
+
+// 	pong, err := rdb.Ping(ctx).Result()
+// 	log.Printf(pong)
+// 	if err != nil {
+// 		log.Printf("ww", err)
+// 		time.Sleep(3 * time.Second)
+// 		err := rdb.Ping(ctx).Err()
+// 		if err != nil {
+// 			panic(err)
+// 		}
+// 	}
+
+// 	topic := rdb.Subscribe(ctx, "ON_BOOK")
+// 	rdb_channel := topic.Channel()
+// 	for msg := range rdb_channel {
+// 		log.Printf("there is redis msg", msg)
+// 		rdbMsg := &BookingDTO{}
+// 		err := json.Unmarshal([]byte(msg.Payload), rdbMsg)
+// 		if err != nil {
+// 			panic(err)
+// 		}
+// 		log.Printf("%v", rdbMsg.MessageType)
+// 		if rdbMsg.MessageType == ON_BOOK {
+// 			hub.broadcast <- MessageDTO{RoomId: rdbMsg.RoomId, MessageType: ON_BOOK, BookedList: rdbMsg.BookList}
+// 		} else {
+// 			log.Printf("not a book message")
+// 		}
+// 	}
+// }
