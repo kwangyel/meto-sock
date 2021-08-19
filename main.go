@@ -29,6 +29,9 @@ func main() {
 	router.GET("/room/:roomId", func(c *gin.Context) {
 		c.HTML(200, "home.html", nil)
 	})
+	router.GET("/", func(c *gin.Context) {
+		c.JSON(200, "Ok")
+	})
 
 	router.GET("/room2/:roomId", func(c *gin.Context) {
 		c.HTML(200, "home2.html", nil)
