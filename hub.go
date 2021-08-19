@@ -74,7 +74,7 @@ func newHub() *Hub {
 	}
 }
 
-func (h *Hub) run() {
+func (h *Hub) run(mqchan chan []byte) {
 	for {
 		select {
 		case client := <-h.register:
@@ -195,10 +195,16 @@ func (h *Hub) run() {
 					if err != nil {
 						log.Printf("%v", err)
 					}
+					c, err := json.Marshal(MessageRequest{RoomId: message.RoomId, MessageType: ON_LOCK_CONFIRM, SeatId: message.SeatId})
+					if err != nil {
+						log.Printf("%v", err)
+					}
 					select {
 					case message.client.send <- b:
+						mqchan <- c
 					default:
 						close(message.client.send)
+						close(mqchan)
 						delete(room, message.client)
 					}
 				case ON_LOCK:

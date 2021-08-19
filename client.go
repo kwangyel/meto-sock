@@ -27,6 +27,7 @@ const (
 	ON_BOOK         = "ON_BOOK"
 	ON_LOCK_LEAVE   = "LOCK_LEAVE"
 	ON_LOCK_CONFIRM = "LOCK_CONFIRM"
+	ON_LOCK_CANCEL  = "LOCK_CANCEL"
 )
 
 var (

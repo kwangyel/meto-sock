@@ -14,9 +14,12 @@ var addr = flag.String("addr", ":8081", "http service address")
 
 func main() {
 	flag.Parse()
+	mqChan := make(chan []byte)
+
 	hub := newHub()
-	go hub.run()
-	go runAmqp(hub)
+	go hub.run(mqChan)
+
+	go runAmqp(hub, mqChan)
 	// go redisSubscribe(hub)
 	//
 
@@ -45,7 +48,7 @@ func main() {
 
 }
 
-func runAmqp(hub *Hub) {
+func runAmqp(hub *Hub, msg chan []byte) {
 	amqpServerUrl := "amqp://guest:guest@localhost:5672/"
 	connectMq, err := amqp.Dial(amqpServerUrl)
 	if err != nil {
@@ -59,9 +62,44 @@ func runAmqp(hub *Hub) {
 	}
 
 	defer channelMQ.Close()
+	err = channelMQ.ExchangeDeclare(
+		"meto",
+		"fanout",
+		true,
+		false,
+		false,
+		false,
+		nil,
+	)
+	if err != nil {
+		log.Println(err)
+	}
+
+	q, err := channelMQ.QueueDeclare(
+		"",
+		false,
+		false,
+		true,
+		false,
+		nil,
+	)
+	if err != nil {
+		log.Println(err)
+	}
+
+	err = channelMQ.QueueBind(
+		q.Name,
+		"",
+		"meto",
+		false,
+		nil,
+	)
+	if err != nil {
+		panic(err)
+	}
 
 	messages, err := channelMQ.Consume(
-		ON_BOOK,
+		q.Name,
 		"",
 		true,
 		false,
@@ -76,18 +114,38 @@ func runAmqp(hub *Hub) {
 	log.Println("Connected to the RabbitMQ")
 
 	// mq := make(chan bool)
-	for message := range messages {
-		log.Printf(" > Received message: %s\n", message.Body)
-		mqMsg := &BookingDTO{}
-		err := json.Unmarshal([]byte(message.Body), mqMsg)
-		if err != nil {
-			panic(err)
+	go func() {
+		for message := range messages {
+			log.Printf(" > Received message: %s\n", message.Body)
+			mqMsg := &MessageRequest{}
+			err := json.Unmarshal([]byte(message.Body), mqMsg)
+			if err != nil {
+				panic(err)
+			}
+
+			switch msgtype := mqMsg.MessageType; msgtype {
+			case ON_BOOK:
+				log.Printf("a book message")
+			case ON_LOCK_CANCEL:
+				hub.broadcast <- MessageDTO{RoomId: mqMsg.RoomId, MessageType: ON_LOCK_LEAVE, SeatId: mqMsg.SeatId}
+			}
+
+			// if mqMsg.MessageType == ON_BOOK {
+			// 	hub.broadcast <- MessageDTO{RoomId: mqMsg.RoomId, MessageType: ON_BOOK, BookedList: mqMsg.BookList}
+			// } else {
+			// 	log.Printf("not a book message")
+			// }
 		}
 
-		if mqMsg.MessageType == ON_BOOK {
-			hub.broadcast <- MessageDTO{RoomId: mqMsg.RoomId, MessageType: ON_BOOK, BookedList: mqMsg.BookList}
-		} else {
-			log.Printf("not a book message")
+	}()
+	for {
+		select {
+		case mqmsg := <-msg:
+			channelMQ.Publish("meto", "", false, false, amqp.Publishing{
+				DeliveryMode: 2,
+				ContentType:  "text/plain",
+				Body:         mqmsg,
+			})
 		}
 	}
 }
