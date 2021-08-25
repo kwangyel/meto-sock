@@ -81,7 +81,8 @@ window.onload = function () {
     };
 
     if (window["WebSocket"]) {
-        conn = new WebSocket("ws://" + document.location.host + "/ws/" + roomId);
+        // conn = new WebSocket("ws://" + document.location.host + "/ws/" + roomId);
+        conn = new WebSocket("ws://" + "www.meto-transport.com"+ "/ws/" + roomId);
         conn.onclose = function (evt) {
             var item = document.createElement("div");
             item.innerHTML = "<b>Connection closed.</b>";
@@ -160,6 +161,12 @@ body {
 </form>
 <form id = "send4">
     <input type="submit" value="send 4" />
+</form>
+
+<form action="http://localhost:3000/bookings/confirmbooking" method="POST">
+    <input type="text" name="bfs_orderNo" value="1">
+    <input type="text" name="bfs_debitAuthCode" value="00">
+    <input type="submit" value="Submit booking" />
 </form>
 </body>
 </html>

@@ -123,7 +123,8 @@ func runAmqp(hub *Hub, msg chan []byte) {
 			mqMsg := &MessageRequest{}
 			err := json.Unmarshal([]byte(message.Body), mqMsg)
 			if err != nil {
-				panic(err)
+				// panic(err)
+				log.Println(err)
 			}
 
 			switch msgtype := mqMsg.MessageType; msgtype {
