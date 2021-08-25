@@ -125,6 +125,7 @@ func runAmqp(hub *Hub, msg chan []byte) {
 			if err != nil {
 				// panic(err)
 				log.Println(err)
+				continue
 			}
 
 			switch msgtype := mqMsg.MessageType; msgtype {
