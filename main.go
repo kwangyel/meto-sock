@@ -2,8 +2,10 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"flag"
 	"log"
+	"reflect"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
@@ -122,10 +124,15 @@ func runAmqp(hub *Hub, msg chan []byte) {
 			log.Printf(" > Received message: %s\n", message.Body)
 			mqMsg := &MessageRequest{}
 			err := json.Unmarshal([]byte(message.Body), mqMsg)
-			if err != nil {
-				// panic(err)
+			if reflect.DeepEqual(mqMsg, MessageRequest{}) {
+				err = errors.New("Cant unmarshal empty object")
 				log.Println(err)
-				continue
+			}
+			if err != nil {
+				log.Println(mqMsg)
+				// panic(err)
+				// log.Println(err)
+				// continue
 			}
 
 			switch msgtype := mqMsg.MessageType; msgtype {

@@ -199,13 +199,20 @@ func (h *Hub) run(mqchan chan []byte) {
 					if err != nil {
 						log.Printf("%v", err)
 					}
+
+					//send to ws socket
 					select {
 					case message.client.send <- b:
-						mqchan <- c
 					default:
 						close(message.client.send)
-						close(mqchan)
 						delete(room, message.client)
+					}
+
+					//send to mq channel
+					select {
+					case mqchan <- c:
+					default:
+						close(mqchan)
 					}
 				case ON_LOCK:
 					seat_client := h.lockedList[message.RoomId]
