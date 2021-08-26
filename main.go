@@ -127,6 +127,7 @@ func runAmqp(hub *Hub, msg chan []byte) {
 			if reflect.DeepEqual(mqMsg, MessageRequest{}) {
 				err = errors.New("Cant unmarshal empty object")
 				log.Println(err)
+				// panic(err)
 			}
 			if err != nil {
 				log.Println(mqMsg)
@@ -140,6 +141,9 @@ func runAmqp(hub *Hub, msg chan []byte) {
 				log.Printf("a book message")
 			case ON_LOCK_CANCEL:
 				hub.broadcast <- MessageDTO{RoomId: mqMsg.RoomId, MessageType: ON_LOCK_LEAVE, SeatId: mqMsg.SeatId}
+			default:
+				log.Println("in the default block")
+
 			}
 
 			// if mqMsg.MessageType == ON_BOOK {
@@ -154,10 +158,10 @@ func runAmqp(hub *Hub, msg chan []byte) {
 		select {
 		case mqmsg := <-msg:
 			channelMQ.Publish("meto", "", false, false, amqp.Publishing{
-				DeliveryMode: 2,
-				ContentType:  "text/plain",
+				DeliveryMode: 1,
 				Body:         mqmsg,
 			})
+
 		}
 	}
 }

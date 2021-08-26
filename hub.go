@@ -198,9 +198,11 @@ func (h *Hub) run(mqchan chan []byte) {
 					c, err := json.Marshal(MessageRequest{RoomId: message.RoomId, MessageType: ON_LOCK_CONFIRM, SeatId: message.SeatId})
 					if err != nil {
 						log.Printf("%v", err)
+						continue
 					}
 
 					//send to ws socket
+					mqchan <- c
 					select {
 					case message.client.send <- b:
 					default:
@@ -209,11 +211,10 @@ func (h *Hub) run(mqchan chan []byte) {
 					}
 
 					//send to mq channel
-					select {
-					case mqchan <- c:
-					default:
-						close(mqchan)
-					}
+					// select {
+					// default:
+					// 	close(mqchan)
+					// }
 				case ON_LOCK:
 					seat_client := h.lockedList[message.RoomId]
 					if seat_client == nil {
