@@ -220,30 +220,65 @@ func (h *Hub) run(mqchan chan []byte) {
 					if seat_client == nil {
 						seat_client = make(map[string]*Client)
 					}
-					seat_client[message.SeatId] = message.client
-					h.lockedList[message.RoomId] = seat_client
-					log.Printf("%v", h.lockedList)
 
-					lockedArray := make([]int, 0, len(h.lockedList[message.RoomId]))
-					for key := range h.lockedList[message.RoomId] {
-						i, err := strconv.Atoi(key)
+					isSeatAvailable := true
+					busSeats := h.lockedList[message.RoomId]
+					for key := range busSeats {
+						if key == message.SeatId {
+							isSeatAvailable = false
+						}
+					}
+
+					if isSeatAvailable {
+						seat_client[message.SeatId] = message.client
+						h.lockedList[message.RoomId] = seat_client
+						log.Printf("%v", h.lockedList)
+
+						lockedArray := make([]int, 0, len(h.lockedList[message.RoomId]))
+						for key := range h.lockedList[message.RoomId] {
+							i, err := strconv.Atoi(key)
+							if err != nil {
+								log.Printf("%v", err)
+							}
+							lockedArray = append(lockedArray, i)
+						}
+
+						b, err := json.Marshal(MessageResponse{RoomId: message.RoomId, MessageType: message.MessageType, LockedList: lockedArray, BookedList: nil})
 						if err != nil {
 							log.Printf("%v", err)
 						}
-						lockedArray = append(lockedArray, i)
-					}
 
-					b, err := json.Marshal(MessageResponse{RoomId: message.RoomId, MessageType: message.MessageType, LockedList: lockedArray, BookedList: nil})
-					if err != nil {
-						log.Printf("%v", err)
-					}
-
-					for client := range room {
+						for client := range room {
+							if client == message.client {
+								a, err := json.Marshal(MessageResponse{RoomId: message.RoomId, MessageType: ON_LOCK_ACK})
+								if err != nil {
+									log.Printf("%v", err)
+								}
+								select {
+								case message.client.send <- a:
+								default:
+									close(message.client.send)
+									delete(room, message.client)
+								}
+							} else {
+								select {
+								case client.send <- b:
+								default:
+									close(client.send)
+									delete(room, client)
+								}
+							}
+						}
+					} else {
+						a, err := json.Marshal(MessageResponse{RoomId: message.RoomId, MessageType: ON_LOCK_FAIL})
+						if err != nil {
+							log.Printf("%v", err)
+						}
 						select {
-						case client.send <- b:
+						case message.client.send <- a:
 						default:
-							close(client.send)
-							delete(room, client)
+							close(message.client.send)
+							delete(room, message.client)
 						}
 					}
 				case ON_BOOK:

@@ -125,7 +125,7 @@ func runAmqp(hub *Hub, msg chan []byte) {
 			mqMsg := &MessageRequest{}
 			err := json.Unmarshal([]byte(message.Body), mqMsg)
 			if reflect.DeepEqual(mqMsg, MessageRequest{}) {
-				err = errors.New("Cant unmarshal empty object")
+				err = errors.New("Can't unmarshal empty object")
 				log.Println(err)
 				// panic(err)
 			}
