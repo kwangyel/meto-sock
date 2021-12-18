@@ -6,13 +6,12 @@ import (
 	"flag"
 	"log"
 	"reflect"
-	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/streadway/amqp"
 )
 
-var addr = flag.String("addr", ":8081", "http service address")
+var addr = flag.String("addr", ":8082", "http service address")
 
 func main() {
 	flag.Parse()
@@ -41,11 +40,14 @@ func main() {
 
 	router.GET("/ws/:roomId", func(c *gin.Context) {
 		roomId := c.Param("roomId")
-		_, err := strconv.Atoi(roomId)
-		if err != nil {
-			log.Printf("%v", err)
-			log.Printf("the room id %v doesnt look like a number", roomId)
-		} else if roomId != "" {
+		// _, err := strconv.Atoi(roomId)
+		// if err != nil {
+		// 	log.Printf("%v", err)
+		// 	log.Printf("the room id %v doesnt look like a number", roomId)
+		// } else if roomId != "" {
+		// 	serveWs(hub, c.Writer, c.Request, roomId)
+		// }
+		if roomId != "" {
 			serveWs(hub, c.Writer, c.Request, roomId)
 		}
 	})
