@@ -51,7 +51,7 @@ func main() {
 			serveWs(hub, c.Writer, c.Request, roomId)
 		}
 	})
-	router.Run("0.0.0.0" + *addr)
+	router.Run("0.0.0.0:" + *addr)
 
 }
 
