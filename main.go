@@ -11,7 +11,7 @@ import (
 	"github.com/streadway/amqp"
 )
 
-var addr = flag.String("addr", ":8082", "http service address")
+var addr = flag.String("addr", "8082", "http service address")
 
 func main() {
 	flag.Parse()
@@ -51,7 +51,7 @@ func main() {
 			serveWs(hub, c.Writer, c.Request, roomId)
 		}
 	})
-	router.Run("0.0.0.0:" + *addr)
+	router.Run("127.0.0.1:" + *addr)
 
 }
 
@@ -142,7 +142,7 @@ func runAmqp(hub *Hub, msg chan []byte) {
 			case ON_BOOK:
 				log.Printf("a book message")
 			case ON_LOCK_CANCEL:
-				hub.broadcast <- MessageDTO{RoomId: mqMsg.RoomId, MessageType: ON_LOCK_LEAVE, SeatId: mqMsg.SeatId}
+				hub.broadcast <- MessageDTO{RoomId: mqMsg.ScheduleHash, MessageType: ON_LOCK_LEAVE, SeatId: mqMsg.SeatId}
 			default:
 				log.Println("in the default block")
 

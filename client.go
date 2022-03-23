@@ -80,8 +80,10 @@ func (c *Client) readPump() {
 		}
 		message = bytes.TrimSpace(bytes.Replace(message, newline, space, -1))
 		json.Unmarshal([]byte(message), &messageRequest)
+		log.Println("nothing wrong here ")
+		log.Println(messageRequest.ScheduleHash)
 
-		c.hub.broadcast <- MessageDTO{RoomId: messageRequest.RoomId, MessageType: messageRequest.MessageType, SeatId: messageRequest.SeatId, client: c}
+		c.hub.broadcast <- MessageDTO{RoomId: messageRequest.ScheduleHash, MessageType: messageRequest.MessageType, SeatId: messageRequest.SeatId, client: c}
 	}
 }
 

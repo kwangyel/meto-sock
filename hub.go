@@ -7,9 +7,9 @@ import (
 )
 
 type MessageRequest struct {
-	RoomId      string
-	MessageType string
-	SeatId      string
+	ScheduleHash string
+	MessageType  string
+	SeatId       string
 }
 type MessageDTO struct {
 	RoomId      string
@@ -80,14 +80,17 @@ func (h *Hub) run(mqchan chan []byte) {
 		case client := <-h.register:
 			room := h.rooms[client.roomId]
 			seats := h.lockedList[client.roomId]
+			log.Println(room)
 			if room == nil {
 				room = make(map[*Client]bool)
 				h.rooms[client.roomId] = room
+				log.Println("this is triggered?")
 				// TODO: might also need to check if the roomId(aka scheduleId) actually exists
 			}
 			room[client] = true
 			log.Printf("Clients in roomid %v is %v", client.roomId, len(h.rooms[client.roomId]))
 			log.Printf("locklist: %v", h.lockedList)
+			log.Println(room)
 
 			if seats != nil {
 				lockedArray := make([]int, 0, len(h.lockedList[client.roomId]))
@@ -106,6 +109,7 @@ func (h *Hub) run(mqchan chan []byte) {
 				select {
 				case client.send <- b:
 				default:
+					log.Println("this was triggered")
 					close(client.send)
 					delete(room, client)
 				}
@@ -176,6 +180,8 @@ func (h *Hub) run(mqchan chan []byte) {
 
 		case message := <-h.broadcast:
 			room := h.rooms[message.RoomId]
+			log.Println("nothing wrong here either")
+			log.Println(room)
 			if room != nil {
 				switch msgType := message.MessageType; msgType {
 
@@ -195,14 +201,17 @@ func (h *Hub) run(mqchan chan []byte) {
 					if err != nil {
 						log.Printf("%v", err)
 					}
-					c, err := json.Marshal(MessageRequest{RoomId: message.RoomId, MessageType: ON_LOCK_CONFIRM, SeatId: message.SeatId})
+					c, err := json.Marshal(MessageRequest{ScheduleHash: message.RoomId, MessageType: ON_LOCK_CONFIRM, SeatId: message.SeatId})
 					if err != nil {
 						log.Printf("%v", err)
 						continue
 					}
 
-					//send to ws socket
+					//send to amqp
 					mqchan <- c
+					log.Println("sending to mq")
+
+					//send to ws socket
 					select {
 					case message.client.send <- b:
 					default:
@@ -216,14 +225,14 @@ func (h *Hub) run(mqchan chan []byte) {
 					// 	close(mqchan)
 					// }
 				case ON_LOCK:
+					log.Println("on lock triggered")
 					seat_client := h.lockedList[message.RoomId]
 					if seat_client == nil {
 						seat_client = make(map[string]*Client)
 					}
 
 					isSeatAvailable := true
-					busSeats := h.lockedList[message.RoomId]
-					for key := range busSeats {
+					for key := range seat_client {
 						if key == message.SeatId {
 							isSeatAvailable = false
 						}
