@@ -11,7 +11,7 @@ import (
 	"github.com/streadway/amqp"
 )
 
-var addr = flag.String("addr", "8082", "http service address")
+var addr = flag.String("addr", "8081", "http service address")
 
 func main() {
 	flag.Parse()
