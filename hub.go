@@ -16,7 +16,6 @@ type MessageDTO struct {
 	MessageType string
 	SeatId      string
 	client      *Client
-	BookedList  []int
 }
 
 type BookingDTO struct {
@@ -25,12 +24,10 @@ type BookingDTO struct {
 	BookList    []int  `json:"bookList"`
 }
 type MessageResponse struct {
-	RoomId      string `json:"roomId"`
-	MessageType string `json:"messageType"`
-	// LockedList  map[string]map[*Client]bool `json:"lockedList"`
-	LeaveList  []string `json:"leaveList"`
-	LockedList []int    `json:"lockedList"`
-	BookedList []int    `json:"bookedList"`
+	RoomId      string   `json:"roomId"`
+	MessageType string   `json:"messageType"`
+	LeaveList   []string `json:"leaveList"`
+	LockedList  []int    `json:"lockedList"`
 }
 
 type Hub struct {
@@ -43,8 +40,8 @@ type Hub struct {
 	// lockedList map[string]map[*Client]bool
 
 	// Structure is like this map[roomId]map[seatId]client
-	lockedList  map[string]map[string]*Client
-	confirmLock map[string]map[string]*Client
+	lockedList  map[string]map[string]string
+	confirmLock map[string]map[string]bool
 
 	bookedList map[string]map[string]bool
 
@@ -67,49 +64,67 @@ func newHub() *Hub {
 		unregister: make(chan *Client),
 		rooms:      make(map[string]map[*Client]bool),
 
-		lockedList:  make(map[string]map[string]*Client),
-		confirmLock: make(map[string]map[string]*Client),
-		bookedList:  make(map[string]map[string]bool),
-		// clients:    make(map[*Client]bool),
+		lockedList:  make(map[string]map[string]string),
+		confirmLock: make(map[string]map[string]bool),
 	}
 }
 
-func (h *Hub) run(mqchan chan []byte) {
+func (h *Hub) run(mqchan chan []byte, restoreChan chan queryDTO, db *DB) {
+
+	//init and populate lock confirmLock map
+	db.restoreState <- true
+
 	for {
 		select {
+		case socketState := <-restoreChan:
+			//restoring confirm List first
+			confirm_list := h.confirmLock[socketState.scheduleHash]
+			if confirm_list == nil {
+				confirm_list = make(map[string]bool)
+			}
+			confirm_list[socketState.seatId] = true
+			h.confirmLock[socketState.scheduleHash] = confirm_list
+
+			//restoring locked list
+			locked_list := h.lockedList[socketState.scheduleHash]
+			if locked_list == nil {
+				locked_list = make(map[string]string)
+			}
+			locked_list[socketState.seatId] = socketState.remoteAddr
+			h.lockedList[socketState.scheduleHash] = locked_list
+
+			log.Printf("[Debug] Restored seat number %v of scheduleHash %v", socketState.seatId, socketState.scheduleHash)
+
 		case client := <-h.register:
 			room := h.rooms[client.roomId]
 			seats := h.lockedList[client.roomId]
-			log.Println(room)
+
 			if room == nil {
 				room = make(map[*Client]bool)
 				h.rooms[client.roomId] = room
-				log.Println("this is triggered?")
-				// TODO: might also need to check if the roomId(aka scheduleId) actually exists
 			}
 			room[client] = true
-			log.Printf("Clients in roomid %v is %v", client.roomId, len(h.rooms[client.roomId]))
-			log.Printf("locklist: %v", h.lockedList)
-			log.Println(room)
+
+			log.Printf("[Debug] ScheuldeHash %v; Count: %v;", client.roomId, len(h.rooms[client.roomId]))
+
+			lockedArray := make([]int, 0, len(h.lockedList[client.roomId]))
 
 			if seats != nil {
-				lockedArray := make([]int, 0, len(h.lockedList[client.roomId]))
 				for key := range h.lockedList[client.roomId] {
 					i, err := strconv.Atoi(key)
 					if err != nil {
-						log.Printf("%v", err)
+						log.Printf("[Error] %v", err)
 					}
 					lockedArray = append(lockedArray, i)
 				}
 
-				b, err := json.Marshal(MessageResponse{RoomId: client.roomId, MessageType: ON_LOCK, LockedList: lockedArray, BookedList: nil})
+				b, err := json.Marshal(MessageResponse{RoomId: client.roomId, MessageType: ON_LOCK, LockedList: lockedArray})
 				if err != nil {
-					log.Printf("%v", err)
+					log.Printf("[Error] %v", err)
 				}
 				select {
 				case client.send <- b:
 				default:
-					log.Println("this was triggered")
 					close(client.send)
 					delete(room, client)
 				}
@@ -128,45 +143,42 @@ func (h *Hub) run(mqchan chan []byte) {
 					confirmedSeats := h.confirmLock[client.roomId]
 					leaveList := make([]string, 0)
 
-					for k, v := range h.lockedList[client.roomId] {
-						log.Printf(k)
-						log.Printf("%v", h.lockedList)
-						log.Printf("%v", confirmedSeats)
-						if confirmedSeats[k] != nil {
+					for seatid, remoteAddress := range h.lockedList[client.roomId] {
+						if confirmedSeats[seatid] {
 							counter++
 						} else {
-							if v == client {
-								leaveList = append(leaveList, k)
-								delete(h.lockedList[client.roomId], k)
+							if client.conn.RemoteAddr().String() == remoteAddress {
+								log.Printf("[Debug] Seat confirmation. Removing seat %v from Locked List ", seatid)
+								leaveList = append(leaveList, seatid)
+								delete(h.lockedList[client.roomId], seatid)
 								counter++
 							}
 						}
 					}
 					if counter > 0 {
 						lockedArray := make([]int, 0, len(h.lockedList[client.roomId]))
-						for key := range h.lockedList[client.roomId] {
-							i, err := strconv.Atoi(key)
+						for seat, _ := range h.lockedList[client.roomId] {
+							i, err := strconv.Atoi(seat)
 							if err != nil {
-								log.Printf("%v", err)
+								log.Printf("[Error] %v", err)
 							}
 							lockedArray = append(lockedArray, i)
 						}
 
 						//build json response and convert to []byte
-						b, err := json.Marshal(MessageResponse{RoomId: client.roomId, LeaveList: leaveList, MessageType: ON_LOCK_LEAVE, LockedList: lockedArray, BookedList: nil})
+						b, err := json.Marshal(MessageResponse{RoomId: client.roomId, LeaveList: leaveList, MessageType: ON_LOCK_LEAVE, LockedList: lockedArray})
 						if err != nil {
-							log.Printf("%v", err)
+							log.Printf("[Error] %v", err)
 						}
 
-						for cc := range room {
+						for clients := range room {
 							select {
 							// case client.send <- MessageResponse{RoomId: message.RoomId, MessageType: message.MessageType, LockedList: h.lockedList, BookedList: nil}:
 
-							case cc.send <- b:
+							case clients.send <- b:
 							default:
-								log.Printf("called here")
-								close(cc.send)
-								delete(room, cc)
+								close(clients.send)
+								delete(room, clients)
 							}
 						}
 
@@ -180,55 +192,33 @@ func (h *Hub) run(mqchan chan []byte) {
 
 		case message := <-h.broadcast:
 			room := h.rooms[message.RoomId]
-			log.Println("nothing wrong here either")
-			log.Println(room)
 			if room != nil {
 				switch msgType := message.MessageType; msgType {
 
 				case ON_LOCK_CONFIRM:
 					confirm_list := h.confirmLock[message.RoomId]
-					// lock_list := h.lockedList[message.RoomId]
 					if confirm_list == nil {
-						confirm_list = make(map[string]*Client)
+						confirm_list = make(map[string]bool)
 					}
-					// if lock_list != nil {
-					// 	delete(h.lockedList[message.RoomId], message.SeatId)
-					// }
-					confirm_list[message.SeatId] = message.client
+					confirm_list[message.SeatId] = true
 					h.confirmLock[message.RoomId] = confirm_list
 
-					b, err := json.Marshal(MessageResponse{RoomId: message.RoomId, MessageType: ON_LOCK_CONFIRM, LockedList: nil, BookedList: nil})
-					if err != nil {
-						log.Printf("%v", err)
-					}
 					c, err := json.Marshal(MessageRequest{ScheduleHash: message.RoomId, MessageType: ON_LOCK_CONFIRM, SeatId: message.SeatId})
 					if err != nil {
-						log.Printf("%v", err)
+						log.Printf("[Error] %v", err)
 						continue
 					}
 
 					//send to amqp
 					mqchan <- c
-					log.Println("sending to mq")
 
-					//send to ws socket
-					select {
-					case message.client.send <- b:
-					default:
-						close(message.client.send)
-						delete(room, message.client)
-					}
+					//set in state for socket persistence
+					db.create <- queryDTO{scheduleHash: message.RoomId, seatId: message.SeatId, remoteAddr: message.client.conn.RemoteAddr().String()}
 
-					//send to mq channel
-					// select {
-					// default:
-					// 	close(mqchan)
-					// }
 				case ON_LOCK:
-					log.Println("on lock triggered")
 					seat_client := h.lockedList[message.RoomId]
 					if seat_client == nil {
-						seat_client = make(map[string]*Client)
+						seat_client = make(map[string]string)
 					}
 
 					isSeatAvailable := true
@@ -239,29 +229,28 @@ func (h *Hub) run(mqchan chan []byte) {
 					}
 
 					if isSeatAvailable {
-						seat_client[message.SeatId] = message.client
+						seat_client[message.SeatId] = message.client.conn.RemoteAddr().String()
 						h.lockedList[message.RoomId] = seat_client
-						log.Printf("%v", h.lockedList)
 
 						lockedArray := make([]int, 0, len(h.lockedList[message.RoomId]))
 						for key := range h.lockedList[message.RoomId] {
 							i, err := strconv.Atoi(key)
 							if err != nil {
-								log.Printf("%v", err)
+								log.Printf("[Error] %v", err)
 							}
 							lockedArray = append(lockedArray, i)
 						}
 
-						b, err := json.Marshal(MessageResponse{RoomId: message.RoomId, MessageType: message.MessageType, LockedList: lockedArray, BookedList: nil})
+						b, err := json.Marshal(MessageResponse{RoomId: message.RoomId, MessageType: message.MessageType, LockedList: lockedArray})
 						if err != nil {
-							log.Printf("%v", err)
+							log.Printf("[Error] %v", err)
 						}
 
 						for client := range room {
 							if client == message.client {
 								a, err := json.Marshal(MessageResponse{RoomId: message.RoomId, MessageType: ON_LOCK_ACK})
 								if err != nil {
-									log.Printf("%v", err)
+									log.Printf("[Error] %v", err)
 								}
 								select {
 								case message.client.send <- a:
@@ -281,7 +270,7 @@ func (h *Hub) run(mqchan chan []byte) {
 					} else {
 						a, err := json.Marshal(MessageResponse{RoomId: message.RoomId, MessageType: ON_LOCK_FAIL})
 						if err != nil {
-							log.Printf("%v", err)
+							log.Printf("[Error] %v", err)
 						}
 						select {
 						case message.client.send <- a:
@@ -290,69 +279,24 @@ func (h *Hub) run(mqchan chan []byte) {
 							delete(room, message.client)
 						}
 					}
-				case ON_BOOK:
-					//TODO: note this will return all booked seats at the moment.
-					book_list := h.bookedList[message.RoomId]
-					confirm_list := h.confirmLock[message.RoomId]
-					if book_list == nil {
-						book_list = make(map[string]bool)
-					}
-					for _, bookedSeats := range message.BookedList {
-						if confirm_list != nil {
-							delete(h.confirmLock[message.RoomId], strconv.Itoa(bookedSeats))
-						}
-						book_list[strconv.Itoa(bookedSeats)] = true
-					}
-
-					// lockArray := make([]int, 0, len(h.lockedList[message.RoomId]))
-					// for key := range h.lockedList[message.RoomId] {
-					// 	i, err := strconv.Atoi(key)
-					// 	if err != nil {
-					// 		log.Printf("%v", err)
-					// 	}
-					// 	lockArray = append(lockArray, i)
-					// }
-					log.Printf("%v", h.confirmLock)
-
-					b, err := json.Marshal(MessageResponse{RoomId: message.RoomId, MessageType: ON_BOOK, LockedList: nil, BookedList: message.BookedList})
-					if err != nil {
-						log.Printf("%v", err)
-					}
-					for client := range room {
-						select {
-						// case client.send <- MessageResponse{RoomId: message.RoomId, MessageType: message.MessageType, LockedList: nil, BookedList: h.bookedList}:
-						case client.send <- b:
-
-						default:
-							close(client.send)
-							delete(room, client)
-						}
-					}
 				case ON_LOCK_LEAVE:
+					//remove from Locked List
 					delete(h.lockedList[message.RoomId], message.SeatId)
 
+					//remove from Confirm List
 					lockConfirm := h.confirmLock[message.RoomId]
-					if lockConfirm[message.SeatId] != nil {
+					if lockConfirm[message.SeatId] {
 						delete(lockConfirm, message.SeatId)
 						h.confirmLock[message.RoomId] = lockConfirm
 					}
 
-					// lockedArray := make([]int, 0, len(h.lockedList[message.RoomId]))
-					// for key := range h.lockedList[message.RoomId] {
-					// 	i, err := strconv.Atoi(key)
-					// 	if err != nil {
-					// 		log.Printf("%v", err)
-					// 	}
-					// 	lockedArray = append(lockedArray, i)
-					// }
 					leaveList := make([]string, 0)
 					leaveList = append(leaveList, message.SeatId)
 
-					b, err := json.Marshal(MessageResponse{RoomId: message.RoomId, LeaveList: leaveList, MessageType: message.MessageType, LockedList: nil, BookedList: nil})
+					b, err := json.Marshal(MessageResponse{RoomId: message.RoomId, LeaveList: leaveList, MessageType: message.MessageType, LockedList: nil})
 					if err != nil {
-						log.Printf("%v", err)
+						log.Printf("[Error] %v", err)
 					}
-					log.Printf("%v", leaveList)
 
 					for client := range room {
 						select {
@@ -362,6 +306,8 @@ func (h *Hub) run(mqchan chan []byte) {
 							delete(room, client)
 						}
 					}
+					//remove from socket state in db
+					db.delete <- queryDTO{scheduleHash: message.RoomId, seatId: message.SeatId}
 
 				}
 			}

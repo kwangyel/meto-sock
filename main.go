@@ -17,12 +17,16 @@ func main() {
 	flag.Parse()
 	mqChan := make(chan []byte)
 
+	restoreChan := make(chan queryDTO)
+
+	//init db and update state
+	dbManager := newDB()
+	go dbManager.run(restoreChan)
+
 	hub := newHub()
-	go hub.run(mqChan)
+	go hub.run(mqChan, restoreChan, dbManager)
 
 	go runAmqp(hub, mqChan)
-	// go redisSubscribe(hub)
-	//
 
 	router := gin.New()
 
@@ -40,13 +44,6 @@ func main() {
 
 	router.GET("/ws/:roomId", func(c *gin.Context) {
 		roomId := c.Param("roomId")
-		// _, err := strconv.Atoi(roomId)
-		// if err != nil {
-		// 	log.Printf("%v", err)
-		// 	log.Printf("the room id %v doesnt look like a number", roomId)
-		// } else if roomId != "" {
-		// 	serveWs(hub, c.Writer, c.Request, roomId)
-		// }
 		if roomId != "" {
 			serveWs(hub, c.Writer, c.Request, roomId)
 		}
@@ -79,7 +76,7 @@ func runAmqp(hub *Hub, msg chan []byte) {
 		nil,
 	)
 	if err != nil {
-		log.Println(err)
+		log.Printf("[Error] %v", err)
 	}
 
 	q, err := channelMQ.QueueDeclare(
@@ -91,7 +88,7 @@ func runAmqp(hub *Hub, msg chan []byte) {
 		nil,
 	)
 	if err != nil {
-		log.Println(err)
+		log.Printf("[Error] %v", err)
 	}
 
 	err = channelMQ.QueueBind(
@@ -118,41 +115,26 @@ func runAmqp(hub *Hub, msg chan []byte) {
 		panic(err)
 	}
 
-	log.Println("Connected to the RabbitMQ")
+	log.Printf("[Debug] Connected to the RabbitMQ")
 
-	// mq := make(chan bool)
 	go func() {
 		for message := range messages {
-			log.Printf(" > Received message: %s\n", message.Body)
+			log.Printf("[Debug] AMQP =>  %s\n", message.Body)
 			mqMsg := &MessageRequest{}
 			err := json.Unmarshal([]byte(message.Body), mqMsg)
 			if reflect.DeepEqual(mqMsg, MessageRequest{}) {
 				err = errors.New("Can't unmarshal empty object")
-				log.Println(err)
-				// panic(err)
+				log.Printf("[Error] %v", err)
 			}
 			if err != nil {
-				log.Println(mqMsg)
-				// panic(err)
-				// log.Println(err)
-				// continue
+				log.Printf("[Error] %v", err)
 			}
 
 			switch msgtype := mqMsg.MessageType; msgtype {
-			case ON_BOOK:
-				log.Printf("a book message")
 			case ON_LOCK_CANCEL:
 				hub.broadcast <- MessageDTO{RoomId: mqMsg.ScheduleHash, MessageType: ON_LOCK_LEAVE, SeatId: mqMsg.SeatId}
 			default:
-				log.Println("in the default block")
-
 			}
-
-			// if mqMsg.MessageType == ON_BOOK {
-			// 	hub.broadcast <- MessageDTO{RoomId: mqMsg.RoomId, MessageType: ON_BOOK, BookedList: mqMsg.BookList}
-			// } else {
-			// 	log.Printf("not a book message")
-			// }
 		}
 
 	}()
@@ -167,41 +149,3 @@ func runAmqp(hub *Hub, msg chan []byte) {
 		}
 	}
 }
-
-// func redisSubscribe(hub *Hub) {
-// 	// Redis loop here
-// 	var ctx = context.Background()
-// 	rdb := redis.NewClient(&redis.Options{
-// 		Addr:     "localhost:6379",
-// 		Password: "",
-// 		DB:       0,
-// 	})
-
-// 	pong, err := rdb.Ping(ctx).Result()
-// 	log.Printf(pong)
-// 	if err != nil {
-// 		log.Printf("ww", err)
-// 		time.Sleep(3 * time.Second)
-// 		err := rdb.Ping(ctx).Err()
-// 		if err != nil {
-// 			panic(err)
-// 		}
-// 	}
-
-// 	topic := rdb.Subscribe(ctx, "ON_BOOK")
-// 	rdb_channel := topic.Channel()
-// 	for msg := range rdb_channel {
-// 		log.Printf("there is redis msg", msg)
-// 		rdbMsg := &BookingDTO{}
-// 		err := json.Unmarshal([]byte(msg.Payload), rdbMsg)
-// 		if err != nil {
-// 			panic(err)
-// 		}
-// 		log.Printf("%v", rdbMsg.MessageType)
-// 		if rdbMsg.MessageType == ON_BOOK {
-// 			hub.broadcast <- MessageDTO{RoomId: rdbMsg.RoomId, MessageType: ON_BOOK, BookedList: rdbMsg.BookList}
-// 		} else {
-// 			log.Printf("not a book message")
-// 		}
-// 	}
-// }

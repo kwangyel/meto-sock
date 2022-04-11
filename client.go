@@ -74,14 +74,12 @@ func (c *Client) readPump() {
 		_, message, err := c.conn.ReadMessage()
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				log.Printf("error: %v", err)
+				log.Printf("[Error] %v", err)
 			}
 			break
 		}
 		message = bytes.TrimSpace(bytes.Replace(message, newline, space, -1))
 		json.Unmarshal([]byte(message), &messageRequest)
-		log.Println("nothing wrong here ")
-		log.Println(messageRequest.ScheduleHash)
 
 		c.hub.broadcast <- MessageDTO{RoomId: messageRequest.ScheduleHash, MessageType: messageRequest.MessageType, SeatId: messageRequest.SeatId, client: c}
 	}
@@ -139,7 +137,7 @@ func serveWs(hub *Hub, w http.ResponseWriter, r *http.Request, roomId string) {
 	upgrader.CheckOrigin = func(r *http.Request) bool { return true }
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Println(err)
+		log.Printf("[Error] %v", err)
 		return
 	}
 	client := &Client{hub: hub, conn: conn, send: make(chan []byte), roomId: roomId}
