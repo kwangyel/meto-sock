@@ -48,7 +48,7 @@ func main() {
 			serveWs(hub, c.Writer, c.Request, roomId)
 		}
 	})
-	router.Run("127.0.0.1:" + *addr)
+	router.Run("10.42.0.186:" + *addr)
 
 }
 

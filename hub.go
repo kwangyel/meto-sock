@@ -96,6 +96,7 @@ func (h *Hub) run(mqchan chan []byte, restoreChan chan queryDTO, db *DB) {
 			log.Printf("[Debug] Restored seat number %v of scheduleHash %v", socketState.seatId, socketState.scheduleHash)
 
 		case client := <-h.register:
+			log.Printf("%v", client.conn.UnderlyingConn().RemoteAddr().String())
 			room := h.rooms[client.roomId]
 			seats := h.lockedList[client.roomId]
 
@@ -147,7 +148,7 @@ func (h *Hub) run(mqchan chan []byte, restoreChan chan queryDTO, db *DB) {
 						if confirmedSeats[seatid] {
 							counter++
 						} else {
-							if client.conn.RemoteAddr().String() == remoteAddress {
+							if client.conn.UnderlyingConn().RemoteAddr().String() == remoteAddress {
 								log.Printf("[Debug] Seat confirmation. Removing seat %v from Locked List ", seatid)
 								leaveList = append(leaveList, seatid)
 								delete(h.lockedList[client.roomId], seatid)
@@ -213,7 +214,7 @@ func (h *Hub) run(mqchan chan []byte, restoreChan chan queryDTO, db *DB) {
 					mqchan <- c
 
 					//set in state for socket persistence
-					db.create <- queryDTO{scheduleHash: message.RoomId, seatId: message.SeatId, remoteAddr: message.client.conn.RemoteAddr().String()}
+					db.create <- queryDTO{scheduleHash: message.RoomId, seatId: message.SeatId, remoteAddr: message.client.conn.UnderlyingConn().RemoteAddr().String()}
 
 				case ON_LOCK:
 					seat_client := h.lockedList[message.RoomId]
@@ -229,7 +230,7 @@ func (h *Hub) run(mqchan chan []byte, restoreChan chan queryDTO, db *DB) {
 					}
 
 					if isSeatAvailable {
-						seat_client[message.SeatId] = message.client.conn.RemoteAddr().String()
+						seat_client[message.SeatId] = message.client.conn.UnderlyingConn().RemoteAddr().String()
 						h.lockedList[message.RoomId] = seat_client
 
 						lockedArray := make([]int, 0, len(h.lockedList[message.RoomId]))
