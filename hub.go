@@ -193,128 +193,129 @@ func (h *Hub) run(mqchan chan []byte, restoreChan chan queryDTO, db *DB) {
 
 		case message := <-h.broadcast:
 			room := h.rooms[message.RoomId]
-			if room != nil {
-				switch msgType := message.MessageType; msgType {
+			// if room != nil {
+			switch msgType := message.MessageType; msgType {
 
-				case ON_LOCK_CONFIRM:
-					confirm_list := h.confirmLock[message.RoomId]
-					if confirm_list == nil {
-						confirm_list = make(map[string]bool)
+			case ON_LOCK_CONFIRM:
+				confirm_list := h.confirmLock[message.RoomId]
+				if confirm_list == nil {
+					confirm_list = make(map[string]bool)
+				}
+				confirm_list[message.SeatId] = true
+				h.confirmLock[message.RoomId] = confirm_list
+
+				c, err := json.Marshal(MessageRequest{ScheduleHash: message.RoomId, MessageType: ON_LOCK_CONFIRM, SeatId: message.SeatId})
+				if err != nil {
+					log.Printf("[Error] %v", err)
+					continue
+				}
+
+				//send to amqp
+				mqchan <- c
+
+				//set in state for socket persistence
+				db.create <- queryDTO{scheduleHash: message.RoomId, seatId: message.SeatId, remoteAddr: message.client.conn.UnderlyingConn().RemoteAddr().String()}
+
+			case ON_LOCK:
+				seat_client := h.lockedList[message.RoomId]
+				if seat_client == nil {
+					seat_client = make(map[string]string)
+				}
+
+				isSeatAvailable := true
+				for key := range seat_client {
+					if key == message.SeatId {
+						isSeatAvailable = false
 					}
-					confirm_list[message.SeatId] = true
-					h.confirmLock[message.RoomId] = confirm_list
+				}
 
-					c, err := json.Marshal(MessageRequest{ScheduleHash: message.RoomId, MessageType: ON_LOCK_CONFIRM, SeatId: message.SeatId})
-					if err != nil {
-						log.Printf("[Error] %v", err)
-						continue
-					}
+				if isSeatAvailable {
+					seat_client[message.SeatId] = message.client.conn.UnderlyingConn().RemoteAddr().String()
+					h.lockedList[message.RoomId] = seat_client
 
-					//send to amqp
-					mqchan <- c
-
-					//set in state for socket persistence
-					db.create <- queryDTO{scheduleHash: message.RoomId, seatId: message.SeatId, remoteAddr: message.client.conn.UnderlyingConn().RemoteAddr().String()}
-
-				case ON_LOCK:
-					seat_client := h.lockedList[message.RoomId]
-					if seat_client == nil {
-						seat_client = make(map[string]string)
-					}
-
-					isSeatAvailable := true
-					for key := range seat_client {
-						if key == message.SeatId {
-							isSeatAvailable = false
-						}
-					}
-
-					if isSeatAvailable {
-						seat_client[message.SeatId] = message.client.conn.UnderlyingConn().RemoteAddr().String()
-						h.lockedList[message.RoomId] = seat_client
-
-						lockedArray := make([]int, 0, len(h.lockedList[message.RoomId]))
-						for key := range h.lockedList[message.RoomId] {
-							i, err := strconv.Atoi(key)
-							if err != nil {
-								log.Printf("[Error] %v", err)
-							}
-							lockedArray = append(lockedArray, i)
-						}
-
-						b, err := json.Marshal(MessageResponse{RoomId: message.RoomId, MessageType: message.MessageType, LockedList: lockedArray})
+					lockedArray := make([]int, 0, len(h.lockedList[message.RoomId]))
+					for key := range h.lockedList[message.RoomId] {
+						i, err := strconv.Atoi(key)
 						if err != nil {
 							log.Printf("[Error] %v", err)
 						}
-
-						for client := range room {
-							if client == message.client {
-								a, err := json.Marshal(MessageResponse{RoomId: message.RoomId, MessageType: ON_LOCK_ACK})
-								if err != nil {
-									log.Printf("[Error] %v", err)
-								}
-								select {
-								case message.client.send <- a:
-								default:
-									close(message.client.send)
-									delete(room, message.client)
-								}
-							} else {
-								select {
-								case client.send <- b:
-								default:
-									close(client.send)
-									delete(room, client)
-								}
-							}
-						}
-					} else {
-						a, err := json.Marshal(MessageResponse{RoomId: message.RoomId, MessageType: ON_LOCK_FAIL})
-						if err != nil {
-							log.Printf("[Error] %v", err)
-						}
-						select {
-						case message.client.send <- a:
-						default:
-							close(message.client.send)
-							delete(room, message.client)
-						}
-					}
-				case ON_LOCK_LEAVE:
-					//remove from Locked List
-					delete(h.lockedList[message.RoomId], message.SeatId)
-
-					//remove from Confirm List
-					lockConfirm := h.confirmLock[message.RoomId]
-					if lockConfirm[message.SeatId] {
-						delete(lockConfirm, message.SeatId)
-						h.confirmLock[message.RoomId] = lockConfirm
+						lockedArray = append(lockedArray, i)
 					}
 
-					leaveList := make([]string, 0)
-					leaveList = append(leaveList, message.SeatId)
-
-					b, err := json.Marshal(MessageResponse{RoomId: message.RoomId, LeaveList: leaveList, MessageType: message.MessageType, LockedList: nil})
+					b, err := json.Marshal(MessageResponse{RoomId: message.RoomId, MessageType: message.MessageType, LockedList: lockedArray})
 					if err != nil {
 						log.Printf("[Error] %v", err)
 					}
 
 					for client := range room {
-						select {
-						case client.send <- b:
-						default:
-							close(client.send)
-							delete(room, client)
+						if client == message.client {
+							a, err := json.Marshal(MessageResponse{RoomId: message.RoomId, MessageType: ON_LOCK_ACK})
+							if err != nil {
+								log.Printf("[Error] %v", err)
+							}
+							select {
+							case message.client.send <- a:
+							default:
+								close(message.client.send)
+								delete(room, message.client)
+							}
+						} else {
+							select {
+							case client.send <- b:
+							default:
+								close(client.send)
+								delete(room, client)
+							}
 						}
 					}
-					//remove from socket state in db
-					db.delete <- queryDTO{scheduleHash: message.RoomId, seatId: message.SeatId}
-
+				} else {
+					a, err := json.Marshal(MessageResponse{RoomId: message.RoomId, MessageType: ON_LOCK_FAIL})
+					if err != nil {
+						log.Printf("[Error] %v", err)
+					}
+					select {
+					case message.client.send <- a:
+					default:
+						close(message.client.send)
+						delete(room, message.client)
+					}
 				}
+			case ON_LOCK_LEAVE:
+				//remove from Locked List
+				delete(h.lockedList[message.RoomId], message.SeatId)
+
+				//remove from Confirm List
+				lockConfirm := h.confirmLock[message.RoomId]
+				if lockConfirm[message.SeatId] {
+					delete(lockConfirm, message.SeatId)
+					h.confirmLock[message.RoomId] = lockConfirm
+				}
+
+				leaveList := make([]string, 0)
+				leaveList = append(leaveList, message.SeatId)
+
+				b, err := json.Marshal(MessageResponse{RoomId: message.RoomId, LeaveList: leaveList, MessageType: message.MessageType, LockedList: nil})
+				if err != nil {
+					log.Printf("[Error] %v", err)
+				}
+
+				db.delete <- queryDTO{scheduleHash: message.RoomId, seatId: message.SeatId}
+				log.Println("ON cancel received")
+				for client := range room {
+					select {
+					case client.send <- b:
+					default:
+						close(client.send)
+						delete(room, client)
+					}
+				}
+				//remove from socket state in db
+
 			}
-			if len(room) == 0 {
-				delete(h.rooms, message.RoomId)
-			}
+			// }
+			// if len(room) == 0 {
+			// 	delete(h.rooms, message.RoomId)
+			// }
 		}
 	}
 }
