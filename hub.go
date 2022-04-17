@@ -209,7 +209,7 @@ func (h *Hub) run(mqchan chan []byte, restoreChan chan queryDTO, db *DB) {
 					log.Printf("[Error] %v", err)
 					continue
 				}
-
+				log.Printf("[DEBUG] Sending to AMQP: %s", c)
 				//send to amqp
 				mqchan <- c
 
@@ -309,13 +309,13 @@ func (h *Hub) run(mqchan chan []byte, restoreChan chan queryDTO, db *DB) {
 						delete(room, client)
 					}
 				}
-				//remove from socket state in db
-
+			case ON_SCHEDULE_RELEASE:
+				//delete all scheduleHash
+				delete(h.lockedList, message.RoomId)
+				delete(h.confirmLock, message.RoomId)
+				db.deleteSchedule <- queryDTO{scheduleHash: message.RoomId}
+				log.Printf("[DEBUG] On Schedule Complete received. Deleting all seats in schedulehash: %v", message.RoomId)
 			}
-			// }
-			// if len(room) == 0 {
-			// 	delete(h.rooms, message.RoomId)
-			// }
 		}
 	}
 }

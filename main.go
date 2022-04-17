@@ -131,6 +131,8 @@ func runAmqp(hub *Hub, msg chan []byte) {
 			}
 
 			switch msgtype := mqMsg.MessageType; msgtype {
+			case ON_SCHEDULE_RELEASE:
+				hub.broadcast <- MessageDTO{RoomId: mqMsg.ScheduleHash, MessageType: ON_SCHEDULE_RELEASE}
 			case ON_LOCK_CANCEL:
 				hub.broadcast <- MessageDTO{RoomId: mqMsg.ScheduleHash, MessageType: ON_LOCK_LEAVE, SeatId: mqMsg.SeatId}
 			default:

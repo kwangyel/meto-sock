@@ -26,20 +26,22 @@ type queryDTO struct {
 	id           int
 }
 type DB struct {
-	create       chan queryDTO
-	updatePaid   chan queryDTO
-	restoreState chan bool
-	delete       chan queryDTO
-	checkTime    chan bool
+	create         chan queryDTO
+	updatePaid     chan queryDTO
+	restoreState   chan bool
+	delete         chan queryDTO
+	deleteSchedule chan queryDTO
+	checkTime      chan bool
 }
 
 func newDB() *DB {
 	return &DB{
-		create:       make(chan queryDTO),
-		updatePaid:   make(chan queryDTO),
-		restoreState: make(chan bool),
-		delete:       make(chan queryDTO),
-		checkTime:    make(chan bool),
+		create:         make(chan queryDTO),
+		updatePaid:     make(chan queryDTO),
+		restoreState:   make(chan bool),
+		delete:         make(chan queryDTO),
+		deleteSchedule: make(chan queryDTO),
+		checkTime:      make(chan bool),
 	}
 }
 
@@ -72,9 +74,10 @@ func (d *DB) run(restoreChan chan queryDTO) {
 
 		case query := <-d.create:
 			db.Create(&SocketState{ScheduleHash: query.scheduleHash, SeatId: query.seatId, RemoteAddr: query.remoteAddr})
-
 		case query := <-d.delete:
 			db.Delete(&SocketState{}, "schedule_hash = ? AND seat_id = ?", query.scheduleHash, query.seatId)
+		case query := <-d.deleteSchedule:
+			db.Delete(&SocketState{}, "schedule_hash = ?", query.scheduleHash)
 		}
 
 	}

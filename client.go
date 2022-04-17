@@ -23,13 +23,14 @@ const (
 	// Maximum message size allowed from peer.
 	maxMessageSize = 512
 
-	ON_LOCK         = "LOCK"
-	ON_BOOK         = "ON_BOOK"
-	ON_LOCK_LEAVE   = "LOCK_LEAVE"
-	ON_LOCK_ACK     = "LOCK_ACK"
-	ON_LOCK_FAIL    = "LOCK_FAIL"
-	ON_LOCK_CONFIRM = "LOCK_CONFIRM"
-	ON_LOCK_CANCEL  = "LOCK_CANCEL"
+	ON_LOCK             = "LOCK"
+	ON_BOOK             = "ON_BOOK"
+	ON_LOCK_LEAVE       = "LOCK_LEAVE"
+	ON_LOCK_ACK         = "LOCK_ACK"
+	ON_LOCK_FAIL        = "LOCK_FAIL"
+	ON_LOCK_CONFIRM     = "LOCK_CONFIRM"
+	ON_LOCK_CANCEL      = "LOCK_CANCEL"
+	ON_SCHEDULE_RELEASE = "SCHEDULE_RELEASE"
 )
 
 var (
