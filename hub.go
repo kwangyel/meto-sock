@@ -201,20 +201,31 @@ func (h *Hub) run(mqchan chan []byte, restoreChan chan queryDTO, db *DB) {
 				if confirm_list == nil {
 					confirm_list = make(map[string]bool)
 				}
-				confirm_list[message.SeatId] = true
-				h.confirmLock[message.RoomId] = confirm_list
-
-				c, err := json.Marshal(MessageRequest{ScheduleHash: message.RoomId, MessageType: ON_LOCK_CONFIRM, SeatId: message.SeatId})
-				if err != nil {
-					log.Printf("[Error] %v", err)
-					continue
+				isSeatAvailable := true
+				for seat := range confirm_list {
+					if seat == message.SeatId {
+						isSeatAvailable = false
+					}
 				}
-				log.Printf("[DEBUG] Sending to AMQP: %s", c)
-				//send to amqp
-				mqchan <- c
 
-				//set in state for socket persistence
-				db.create <- queryDTO{scheduleHash: message.RoomId, seatId: message.SeatId, remoteAddr: message.client.conn.UnderlyingConn().RemoteAddr().String()}
+				if isSeatAvailable {
+					confirm_list[message.SeatId] = true
+					h.confirmLock[message.RoomId] = confirm_list
+
+					c, err := json.Marshal(MessageRequest{ScheduleHash: message.RoomId, MessageType: ON_LOCK_CONFIRM, SeatId: message.SeatId})
+					if err != nil {
+						log.Printf("[Error] %v", err)
+						continue
+					}
+					log.Printf("[DEBUG] Sending to AMQP: %s", c)
+					//send to amqp
+					mqchan <- c
+
+					//set in state for socket persistence
+					db.create <- queryDTO{scheduleHash: message.RoomId, seatId: message.SeatId, remoteAddr: message.client.conn.UnderlyingConn().RemoteAddr().String()}
+				} else {
+					log.Printf("[Error] Seat id %v already in confirmed list", message.SeatId)
+				}
 
 			case ON_LOCK:
 				seat_client := h.lockedList[message.RoomId]
